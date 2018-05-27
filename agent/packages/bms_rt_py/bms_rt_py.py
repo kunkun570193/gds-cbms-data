@@ -6,7 +6,6 @@ import queue
 
 #
 # 全局对象
-#
 
 # 消息队列数量
 glb_ThreadNum = 10
