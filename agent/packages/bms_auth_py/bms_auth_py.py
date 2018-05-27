@@ -1,7 +1,9 @@
 # -*- coding:utf-8 -*-
-import datetime,time
+import datetime, time
 import configparser
 import requests
+import hashlib
+import json
 
 
 class BmsAuth():
@@ -18,16 +20,25 @@ class BmsAuth():
 
         # TODO ：1. 从 config/bms.cfg 文件中读取BMS配置， 失败返回 False
         conf = configparser.ConfigParser()
-        conf.read("bms.cfg")
-        self.bmsCfg = conf.sections()  # 得到所有的section，并以列表的形式返回
-        if self.bmsCfg is None:
-            return False
+
+        try:
+            conf.read("/home/python/Desktop/BMSAgent/BMSAgent/config/bms.cfg.ini")
+            secs = conf.sections()
+            print(secs)
+        except Exception as e:
+            print(False)
             # 获得指定section中的key的value
-        self.url = conf.get("bms_cfg_msg", "URL_ROOT")
+        self.url_root = conf.get("bms_cfg_msg", "URL_ROOT")
+        print(self.url_root)
         self.user = conf.get("bms_cfg_msg", "USER")
+        print(self.user)
         self.password = conf.get("bms_cfg_msg", "PASSWORD")
+        print(self.password)
         self.system = conf.get("bms_cfg_msg", "SYSTEM")
+        print(self.system)
+
         self.version = conf.get("bms_cfg_msg", "VERSION")
+        print(self.version)
 
         return True
 
@@ -36,17 +47,35 @@ class BmsAuth():
         return True
 
     def login(self):
-        url = self.url
-        data = self.user + self.password + self.system + self.version
-        # 发送请求, 接受响应
-        res = requests.post(url=self.url, data=data)
-        # 提取token数据
-        self.tokenInfo = res.json()['token']
-        self.token_time=datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        url = self.url_root + "/north/login"
+        print(url)
+        password = hashlib.md5(str(self.password).encode("utf-8")).hexdigest()
+        print(password)
 
-        while True:
-            with open("temp/token.txt", "w")as f:
-                f.write(self.tokenInfo)
+        param = {"password": password, "username": self.user}
+
+        print(param)
+        postparam = {"version": self.version,
+                     "system": self.system,
+                     "data": param}
+
+        postParamStr = json.JSONEncoder().encode(postparam)
+
+        res = requests.post(url=url, data=postParamStr)
+        # 提取token数据
+        self.tokenInfo = res.json()['data']['token']
+        print(self.tokenInfo)
+        #  获取最大保活时限
+
+        self.timeout = res.json()['data']['timeout']
+        print(self.timeout)
+
+        if self.tokenInfo is None:
+            print("tonken Fail")
+
+        with open("/home/python/Desktop/gitsource1/gds-cbms-data/agent/temp/token.txt", "w")as f:
+            f.write(self.tokenInfo)
+            print("ok")
 
     def run(self):
         self.login()
@@ -56,10 +85,13 @@ class BmsAuth():
     # TODO ：2. Token信息保存到 temp/token.txt 文件中
 
     def waitNextTime(self):
-        time.sleep(590)
+
+        # TODO ：根据获取Token的有效期，等待相应的时间（考虑到下次操作的时间间隔，需提前10s运行）
+        timeout = self.timeout - 10
 
 
-# TODO ：根据获取Token的有效期，等待相应的时间（考虑到下次操作的时间间隔，需提前10s运行）
+
+        time.sleep(timeout)
 
 
 def main():
