@@ -22,23 +22,17 @@ class BmsAuth():
         conf = configparser.ConfigParser()
 
         try:
-            conf.read("/home/python/Desktop/BMSAgent/BMSAgent/config/bms.cfg.ini")
+            conf.read("../../config/bms.cfg")
             secs = conf.sections()
             print(secs)
         except Exception as e:
             print(False)
             # 获得指定section中的key的value
-        self.url_root = conf.get("bms_cfg_msg", "URL_ROOT")
-        print(self.url_root)
-        self.user = conf.get("bms_cfg_msg", "USER")
-        print(self.user)
-        self.password = conf.get("bms_cfg_msg", "PASSWORD")
-        print(self.password)
-        self.system = conf.get("bms_cfg_msg", "SYSTEM")
-        print(self.system)
-
-        self.version = conf.get("bms_cfg_msg", "VERSION")
-        print(self.version)
+        self.url_root = conf.get("default", "URL_ROOT")
+        self.user = conf.get("default", "USER")
+        self.password = conf.get("default", "PASSWORD")
+        self.system = conf.get("default", "SYSTEM")
+        self.version = conf.get("default", "VERSION")
 
         return True
 
@@ -62,6 +56,7 @@ class BmsAuth():
         postParamStr = json.JSONEncoder().encode(postparam)
 
         res = requests.post(url=url, data=postParamStr)
+        print(res.json())
         # 提取token数据
         self.tokenInfo = res.json()['data']['token']
         print(self.tokenInfo)
@@ -73,7 +68,7 @@ class BmsAuth():
         if self.tokenInfo is None:
             print("tonken Fail")
 
-        with open("/home/python/Desktop/gitsource1/gds-cbms-data/agent/temp/token.txt", "w")as f:
+        with open("../../temp/token.txt", "w")as f:
             f.write(self.tokenInfo)
             print("ok")
 
