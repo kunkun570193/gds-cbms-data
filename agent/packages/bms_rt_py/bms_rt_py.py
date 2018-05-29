@@ -54,19 +54,20 @@ class AlarmMsgProcessor():
 class MsgQueue():
     def __init__(self):
         # self.queue = None  # 创建消息对象
-        self.q = queue.Queue()
-
+        self.msgType = queue.Queue()
+        self.msgBody = queue.Queue()
     # 将参数中的消息推送到消息队列
     def pushMsg(self, msgType, msgBody):
-        self.q.put(msgType)
-        self.q.put(msgBody)
+        self.msgType.put(msgType)
+        self.msgBody.put(msgBody)
+
 
     # 从消息队列中取1条消息，返回 msgType, msgBody
     def popMsg(self):
         while True:
             try:
-                msgType=self.q.get()
-                msgBody=self.q.get()
+                msgType=self.msgType.get()
+                msgBody= self.msgBody.get()
             except queue.Empty:
                 break
 
