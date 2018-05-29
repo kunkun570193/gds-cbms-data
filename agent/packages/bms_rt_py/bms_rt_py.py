@@ -58,16 +58,16 @@ class MsgQueue():
 
     # 将参数中的消息推送到消息队列
     def pushMsg(self, msgType, msgBody):
-        msgType = self.q.put(msgType)
-        msgBody = self.q.put(msgBody)
+        self.q.put(msgType)
+        self.q.put(msgBody)
 
     # 从消息队列中取1条消息，返回 msgType, msgBody
     def popMsg(self):
         while True:
             try:
-                msgType=self.q.get(timeout=1)
-                msgBody=self.q.get(timeout=1)
-            except Exception as e:
+                msgType=self.q.get()
+                msgBody=self.q.get()
+            except queue.Empty:
                 break
 
 
