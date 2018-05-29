@@ -24,15 +24,15 @@ class BmsAuth():
         try:
             conf.read("../../config/bms.cfg")
             secs = conf.sections()
-            print(secs)
+            self.url_root = conf.get("default", "URL_ROOT")
+            self.user = conf.get("default", "USER")
+            self.password = conf.get("default", "PASSWORD")
+            self.system = conf.get("default", "SYSTEM")
+            self.version = conf.get("default", "VERSION")
+
         except Exception as e:
-            print(False)
-            # 获得指定section中的key的value
-        self.url_root = conf.get("default", "URL_ROOT")
-        self.user = conf.get("default", "USER")
-        self.password = conf.get("default", "PASSWORD")
-        self.system = conf.get("default", "SYSTEM")
-        self.version = conf.get("default", "VERSION")
+            print(e)
+
 
         return True
 
@@ -56,36 +56,26 @@ class BmsAuth():
         postParamStr = json.JSONEncoder().encode(postparam)
 
         res = requests.post(url=url, data=postParamStr)
-        print(res.json())
+
         # 提取token数据
         self.tokenInfo = res.json()['data']['token']
-        print(self.tokenInfo)
+
         #  获取最大保活时限
 
         self.timeout = res.json()['data']['timeout']
-        print(self.timeout)
 
         if self.tokenInfo is None:
             print("tonken Fail")
-
-        with open("../../temp/token.txt", "w")as f:
-            f.write(self.tokenInfo)
-            print("ok")
+        else:
+            with open("../../temp/token.txt", "w")as f:
+                f.write(self.tokenInfo)
+                print("tokenInfo ok")
 
     def run(self):
         self.login()
 
-    # TODO ：1. 调用登录接口，取得token 信息
-
-    # TODO ：2. Token信息保存到 temp/token.txt 文件中
-
     def waitNextTime(self):
-
-        # TODO ：根据获取Token的有效期，等待相应的时间（考虑到下次操作的时间间隔，需提前10s运行）
         timeout = self.timeout - 10
-
-
-
         time.sleep(timeout)
 
 
