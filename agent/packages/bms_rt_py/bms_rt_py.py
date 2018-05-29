@@ -22,7 +22,7 @@ class CfgMsgProcessor():
     #
     # 处理消息
     #
-    def processMsg(msg):
+    def processMsg(self,msgBody):
         pass
 
 
@@ -33,7 +33,7 @@ class PmMsgProcessor():
     #
     # 处理消息
     #
-    def processMsg(msg):
+    def processMsg(self,msgBody):
         pass
 
 
@@ -44,7 +44,7 @@ class AlarmMsgProcessor():
     #
     # 处理消息
     #
-    def processMsg(msg):
+    def processMsg(self,msgBody):
         pass
 
 
@@ -63,7 +63,12 @@ class MsgQueue():
 
     # 从消息队列中取1条消息，返回 msgType, msgBody
     def popMsg(self):
-        msgType, msgBody = self.q.get()
+        while True:
+            try:
+                msgType=self.q.get(timeout=1)
+                msgBody=self.q.get(timeout=1)
+            except Exception as e:
+                break
 
 
 #
@@ -103,44 +108,45 @@ class PushHandler(BaseHTTPRequestHandler):
 
     def sendBackError(self, code, data):
         # step 1 : 返回错误号 code
-        self.send_error(500)
+        self.send_error(code)
         # step 2 : 如果data内容不为空，则返回data内容
         if not data:
             return data
 
     def do_GET(self):
-        self.sendBackError(500, "result:fail")
+        self.sendBackError(4,"pattern error")
 
     def do_POST(self):
         # step 1 : 解析请求的URL , 数据对象
         # urlStr = "解析出的URL"
-        parsed_result = urlparse(self.path)
-        urlStr = parsed_result.path
+        result = urlparse(self.path)
+        urlStr = result.path
         # postObj = "解析出的数据参数"
-        length = self.headers.getheader('content-length')
-        nbytes = int(length)
-        postObj = self.rfile.read(nbytes)
 
-        # datas = self.rfile.read(int(self.headers['content-length']))
+        postObj = self.rfile.read(int(self.headers['content-length']))
+        if postObj is None:
 
+            return self.sendBackError(4,"postObj is None")
+
+        else:
         # step 2.1 : 根据不通消息类型，处理数据对象
 
         # step 2.1.1 如果是推送消息的url请求
-        if urlStr == "/north/config/push":
-            #   此处不做处理将消息直接发送到消息队列
-            postObj.pushMsg()
-        # step 2.1.2 如果是推送性能的url请求
-        elif urlStr == "/north/data/online/push":
-            #   此处不做处理将消息直接发送到消息队列
-            postObj.pushMsg()
-        # step 2.1.3 如果是推送告警的url请求
-        elif urlStr == "/north/alarm/online/push":
-            #   此处不做处理将消息直接发送到消息队列
-            postObj.pushMsg()
-        # step 2.1.4 否则返回错误信息
-        #   不是主动推送请求，返回错误信息
-        else:
-            self.send_error("NOT PUSH")
+            if urlStr == "/north/config/push":
+                #   此处不做处理将消息直接发送到消息队列
+                postObj.pushMsg()
+            # step 2.1.2 如果是推送性能的url请求
+            elif urlStr == "/north/data/online/push":
+                #   此处不做处理将消息直接发送到消息队列
+                postObj.pushMsg()
+            # step 2.1.3 如果是推送告警的url请求
+            elif urlStr == "/north/alarm/online/push":
+                #   此处不做处理将消息直接发送到消息队列
+                postObj.pushMsg()
+            # step 2.1.4 否则返回错误信息
+            #   不是主动推送请求，返回错误信息
+            else:
+                self.sendBackError(4,"NOT PUSH")
 
         # step 2.2 返回调用成功与否的信息
         self.sendBackSuccess("result:success")
