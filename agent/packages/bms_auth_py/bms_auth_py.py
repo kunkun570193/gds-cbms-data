@@ -18,7 +18,6 @@ class BmsAuth():
     def prepare(self):
         """ 准备运行 """
 
-        # TODO ：1. 从 config/bms.cfg 文件中读取BMS配置， 失败返回 False
         conf = configparser.ConfigParser()
 
         try:
