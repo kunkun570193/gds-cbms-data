@@ -1,8 +1,9 @@
 # import BaseHTTPServer
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import urlparse
 import threading
 import queue
+import requests,json
+
 
 #
 # 全局对象
@@ -22,7 +23,7 @@ class CfgMsgProcessor():
     #
     # 处理消息
     #
-    def processMsg(self,msgBody):
+    def processMsg(self, msgBody):
         pass
 
 
@@ -33,7 +34,7 @@ class PmMsgProcessor():
     #
     # 处理消息
     #
-    def processMsg(self,msgBody):
+    def processMsg(self, msgBody):
         pass
 
 
@@ -44,7 +45,7 @@ class AlarmMsgProcessor():
     #
     # 处理消息
     #
-    def processMsg(self,msgBody):
+    def processMsg(self, msgBody):
         pass
 
 
@@ -54,24 +55,30 @@ class AlarmMsgProcessor():
 class MsgQueue():
     def __init__(self):
         # self.queue = None  # 创建消息对象
-        self.msgType = queue.Queue()
-        self.msgBody = queue.Queue()
+        self.queue = queue.Queue()
+
     # 将参数中的消息推送到消息队列
     def pushMsg(self, msgType, msgBody):
-        self.msgType.put(msgType)
-        self.msgBody.put(msgBody)
+
+        self.queue.put((msgType,msgBody))
+
+
+        print("推送到队列")
+        msgBody=self.queue.get()
+        with open("msgbody.log","w")as f:
+            f.write(str(msgBody))
 
 
     # 从消息队列中取1条消息，返回 msgType, msgBody
     def popMsg(self):
         while True:
             try:
-                msgType=self.msgType.get()
-                msgBody= self.msgBody.get()
+                self.queue.get()
+                self.queue.task_done()
+                print("获取消息成功")
+
             except queue.Empty:
                 break
-
-
 #
 # 线程对象
 #
@@ -115,43 +122,56 @@ class PushHandler(BaseHTTPRequestHandler):
             return data
 
     def do_GET(self):
-        self.sendBackError(4,"pattern error")
+        self.sendBackError(4, "pattern error")
 
     def do_POST(self):
         # step 1 : 解析请求的URL , 数据对象
         # urlStr = "解析出的URL"
-        result = urlparse(self.path)
-        urlStr = result.path
+        urlStr = self.path
+        print(urlStr)
         # postObj = "解析出的数据参数"
-
         postObj = self.rfile.read(int(self.headers['content-length']))
         if postObj is None:
+            print("postObj is None")
+            return self.sendBackError(4, "postObj is None")
 
-            return self.sendBackError(4,"postObj is None")
 
         else:
-        # step 2.1 : 根据不通消息类型，处理数据对象
 
-        # step 2.1.1 如果是推送消息的url请求
+            # step 2.1 : 根据不通消息类型，处理数据对象
+
+            global glb_Queue
+            # step 2.1.1 如果是推送消息的url请求
             if urlStr == "/north/config/push":
                 #   此处不做处理将消息直接发送到消息队列
-                postObj.pushMsg()
+                glb_Queue=MsgQueue()
+                glb_Queue.pushMsg("cm", postObj)
+                print("cm消息发送到队列")
+
             # step 2.1.2 如果是推送性能的url请求
             elif urlStr == "/north/data/online/push":
                 #   此处不做处理将消息直接发送到消息队列
-                postObj.pushMsg()
+                glb_Queue = MsgQueue()
+                glb_Queue.pushMsg("pm", postObj)
+                print("pm消息发送到队列")
+
             # step 2.1.3 如果是推送告警的url请求
             elif urlStr == "/north/alarm/online/push":
                 #   此处不做处理将消息直接发送到消息队列
-                postObj.pushMsg()
+                glb_Queue = MsgQueue()
+                glb_Queue.pushMsg("am", postObj)
+                print("am消息发送到队列")
+
             # step 2.1.4 否则返回错误信息
             #   不是主动推送请求，返回错误信息
             else:
-                self.sendBackError(4,"NOT PUSH")
+                self.sendBackError(4, "NOT PUSH")
 
         # step 2.2 返回调用成功与否的信息
         self.sendBackSuccess("result:success")
-
+        self.send_header("Content-type", "application/json")
+        self.send_header("Content-Length", 0)
+        self.end_headers()
 
 def main():
     global glb_Queue
@@ -159,11 +179,11 @@ def main():
     # 初始化全局对象
     glb_Queue = MsgQueue()
 
+
     # TODO : 根据消息队列数量启动线程
     threadAry = []
     for i in range(0, glb_ThreadNum):
         thread = WorkThread()
-        # threadAry.push(thread)
         threadAry.append(thread)
         thread.start()
 
