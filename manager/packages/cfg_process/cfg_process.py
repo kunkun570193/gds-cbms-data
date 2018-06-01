@@ -82,22 +82,82 @@ class CfgProcess():
             if not self.mainDB:
                 return
 
-        # 2. 连接数据库
+        # 2. 解析数据
         msgObj = json.JSONDecoder().decode(msg.decode('utf8'))
         dcId = msgObj['dc_id']
         cfgRows = msgObj['data']
 
-        # 3. 处理配置记录
+        if not dcId :
+            return
+
+        # 3. 根据dc_id查询agent
+        cursor = self.mainDB.cursor()
+        cursor.execute('select agent_id from cbms.cfg_agent where dc_id = %s', (dcId))
+        r = cursor.fetchone()
+
+        if not r:
+            # TODO : 记录日志，没有agent
+            return
+
+        agentId = r[0]
+
+        # 4. 处理配置记录
         for row in cfgRows:
             # 设备和位置都作为位置节点处理
             if row['node_type'] in (1,2):
-                print(row)
-                pass
+                cursor.execute("select id from cfg_bms_device where agent_id=%s and device_no=%s", (agentId, row["guid"]))
+                r = cursor.fetchone()
+
+                if r:
+                    cursor.execute("""
+                        update cfg_bms_device
+                        set device_name=%s,
+                            station_no=%s,
+                            station_name=%s,
+                            update_time=now(),
+                            is_del=0
+                        where id=%s""",
+                        (row["name"], row["parent_id"], '', r[0])
+                    )
+                    self.mainDB.commit()
+                else :
+                    cursor.execute("""
+                        insert into cfg_bms_device
+                            (agent_id, device_no, device_name, station_no, station_name,update_time,find_time)
+                        values (%s,%s,%s,%s,'',now(),now())""",
+                        (agentId, row["guid"], row["name"], row["parent_id"])
+                    )
+                    self.mainDB.commit()
 
             # 处理节点信息
             if row['node_type'] == 3:
-                print(row)
-                pass
+                cursor.execute("select id from cfg_bms_tag where agent_id=%s and tag_no=%s", (agentId, row["guid"]))
+                r = cursor.fetchone()
+
+                if r :
+                    cursor.execute("""
+                        update cfg_bms_tag
+                        set tag_name=?,
+                            device_no=?,
+                            device_name='',
+                            station_no='',
+                            station_name='',
+                            update_time=now(),
+                            is_del=0
+                        where id=?""",
+                        (r["name"], r["parent_id"], r[0])
+                    )
+                    self.mainDB.commit()
+
+                else :
+                    cursor.execute("""
+                        insert into cfg_bms_tag (
+                            agent_id, tag_no, tag_name, device_no, device_name,
+                            station_no, station_name, update_time, find_time
+                        ) values (%s,%s,%s,%s,'','','',now(),now())""",
+                        (agentId, row['guid'], row['name'], row['parent_id'])
+                    )
+                    self.mainDB.commit()
 
 def main():
     cfgProcess = CfgProcess()
