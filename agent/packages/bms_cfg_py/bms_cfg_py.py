@@ -4,10 +4,7 @@ import configparser
 import requests
 import json
 from os.path import exists
-
-glb_LocationMap = {}  # 位置映射表  guid => obj
-glb_DeviceMap = {}  # 设备映射表  guid => obj
-glb_TagMap = {}  # 指标映射表  guid => obj
+import redis
 
 # 采集间隔
 COLLECT_INTERVAL = 24 * 3600
@@ -35,7 +32,7 @@ class bmsCfg():
         except Exception as e:
             print(e)
 
-        #   如果和当前时间间隔不足 COLLECT_INTERVAL 则返回False，不做采集
+        # 如果和当前时间间隔不足 COLLECT_INTERVAL 则返回False，不做采集
         if exists("../../temp/cfg.tag"):
             with open("../../temp/cfg.tag", "r") as f:
                 oldtime = int(f.read())
@@ -47,8 +44,6 @@ class bmsCfg():
             nowtime = int(time.time())
             with open("../../temp/cfg.tag", "w")as f:
                 f.write(str(nowtime))
-
-        print("采集bms配置成功")
         return True
 
     def end(self):
@@ -59,6 +54,7 @@ class bmsCfg():
         return True
 
     def run(self):
+
         header = {}
         with open("../../temp/token.txt", "r")as f:
             self.tokenInfo = f.read()
@@ -68,14 +64,19 @@ class bmsCfg():
                 header["token"] = self.tokenInfo
             else:
                 return False
-        print(header)
+
+        if exists("../../config/config_version.txt"):
+            with open("../../config/config_version.txt", "r") as f:
+                self.config_version = f.read()
+        else:
+            self.config_version = 12
+
         url = self.url_root + "/north/config/get"
-        param = {"config_version": "12"}
+        param = {"config_version": self.config_version}
 
         postparam = {"version": self.version,
                      "system": self.system,
                      "data": param}
-        print(postparam)
 
         res = requests.post(url=url, data=json.dumps(postparam), headers=header)
 
@@ -85,33 +86,39 @@ class bmsCfg():
 
         else:
             config_version = res.json()['data']['config_version']
-            if config_version is None:
-                print('config_version Fail')
-                return False
+            nodes = res.json()['data']['nodes']
 
-            else:
-                nodes = res.json()['data']['nodes']
-                if nodes is None:
-                    print("nodes Fail")
-                    return False
-                else:
-                    for node in nodes:
-                        if node['node_type'] == 1:
-                            glb_LocationMap[node['guid']] = node
-                            with open("glb_LocationMap.txt", "a")as f:
-                                f.write(str(glb_LocationMap[node['guid']]))
+            if config_version and nodes is not None:
+                with open("../../config/config_version.txt", "w")as f:
+                    f.write(str(config_version))
 
-                        elif node['node_type'] == 2:
-                            glb_DeviceMap[node['guid']] = node
-                            with open("glb_DeviceMap.txt", "a")as f:
-                                f.write(str(glb_DeviceMap[node['guid']]))
+        cfg = configparser.ConfigParser()
 
-                        elif node['node_type'] == 3:
-                            glb_TagMap[node['guid']] = node
-                            with open("glb_TagMap.txt", "a")as f:
-                                f.write(str(glb_TagMap[node['guid']]))
-                        else:
-                            print("Error node type", node['node_type'])
+        cfg.read('../../config/manager.cfg')
+
+
+        # 2. 连接redis
+
+        pool = redis.ConnectionPool(host=cfg.get('redis', 'RDS_HOST'),
+                                port=int(cfg.get('redis', 'RDS_PORT')),
+                                db=int(cfg.get('redis', 'RDS_DB')))
+        r = redis.Redis(connection_pool=pool)
+
+        data_list = []
+        nodes = res.json()['data']['nodes']
+        for node in nodes:
+            x=data_list.count(node)
+            if x < 1000:
+                data_list.append(node)
+                x += 1
+
+            dc_id = ("'dc_id':46" ,data_list)
+
+            js_data = json.dumps(dc_id,ensure_ascii=False)
+
+            r.lpush("cfg", js_data)
+
+
         return True
 
 
