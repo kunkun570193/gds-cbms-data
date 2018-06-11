@@ -1,11 +1,15 @@
-# import BaseHTTPServer
+# -*- coding:utf-8 -*-
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import threading
 import queue
-import requests,json
+import json,time
+import gzip
+import rt_helper
 
 
-#
+H = rt_helper.RtHelper()
+H.setLogger('bms_rt')
+
 # 全局对象
 
 # 消息队列数量
@@ -13,19 +17,41 @@ glb_ThreadNum = 10
 
 # 消息队列
 glb_Queue = None
-
-
-#
-#
 # 配置消息处理对象
-#
 class CfgMsgProcessor():
-    #
     # 处理消息
-    #
     def processMsg(self, msgBody):
-        pass
 
+        # 连接 mananger 的 redis
+        r = H.connectManagerRedis()
+
+        result = json.loads(msgBody.decode("utf-8"))
+        res = result['nodes']
+        nodes = json.dumps(res)
+
+        config_version=msgBody['config_version']
+        H.writeTempFile("config_version.txt", config_version)
+
+        cnt = 1
+        while len(nodes) > 0:
+            #  最多1000条记录一个包
+            popLen = min(1000, len(nodes))
+
+            data_list = nodes[:popLen]
+            nodes = nodes[popLen:]
+
+            # 打包json数据
+            jsonStr = json.dumps({
+                'dc_id': 46,
+                'data': data_list
+            })
+            jsonBin = gzip.compress(jsonStr.encode('utf8'))
+            r.lpush("cfg", jsonBin)
+
+            H.logger.info("发送配置数据 %s ~ %s , 长度 %s", cnt, cnt + popLen, len(jsonBin))
+            cnt += popLen
+            time.sleep(5)
+        return True
 
 #
 # 性能消息处理对象
@@ -36,8 +62,6 @@ class PmMsgProcessor():
     #
     def processMsg(self, msgBody):
         pass
-
-
 #
 # 告警消息处理对象
 #
@@ -46,13 +70,36 @@ class AlarmMsgProcessor():
     # 处理消息
     #
     def processMsg(self, msgBody):
-        pass
+        # 连接 mananger 的 redis
+        r = H.connectManagerRedis()
+
+        H.logger.info("链接redis成功")
+
+        result = json.loads(msgBody.decode("utf-8"))
+        data_list = [result['data']]
+
+        if len(data_list) > 0:
+            # 打包json数据
+            jsonStr = json.dumps({
+                'dc_id': 46,
+                'data': data_list
+            })
+
+            jsonBin = gzip.compress(jsonStr.encode('utf8'))
+
+            r.lpush("alarm", jsonBin)
+
+            H.logger.info("发送离线告警数据长度 %s",  len(jsonBin))
+            time.sleep(5)
+
+        return True
 
 
 #
 # 消息队列对象
 #
 class MsgQueue():
+
     def __init__(self):
         # self.queue = None  # 创建消息对象
         self.queue = queue.Queue()
@@ -62,24 +109,16 @@ class MsgQueue():
 
         self.queue.put((msgType,msgBody))
 
-
-        print("推送到队列")
-        msgBody=self.queue.get()
-        with open("msgbody.log","w")as f:
-            f.write(str(msgBody))
-
-
     # 从消息队列中取1条消息，返回 msgType, msgBody
     def popMsg(self):
         while True:
             try:
-                self.queue.get()
-                self.queue.task_done()
-                print("获取消息成功")
+                msg=self.queue.get()
 
             except queue.Empty:
-                break
-#
+               continue
+            else:
+                return msg
 # 线程对象
 #
 class WorkThread(threading.Thread):
@@ -92,16 +131,19 @@ class WorkThread(threading.Thread):
         # step2 : 从消息队列中取数据并处理
         global glb_Queue
         while True:
-            msgType, msgBody = glb_Queue.popMsg()
+            msgType,msgBody = glb_Queue.popMsg()
 
-            # 循环消息处理列表
+
+           # # 循环消息处理列表
             if msgType == 'cm':
                 cfgMsgProcessor.processMsg(msgBody)
+
             elif msgType == 'pm':
                 pmMsgProcessor.processMsg(msgBody)
-            elif msgType == 'am':
-                alarmMsgProcessor.processMsg(msgBody)
 
+            elif msgType == 'am':
+
+                alarmMsgProcessor.processMsg(msgBody)
 
 #
 # http server 处理类
@@ -128,39 +170,33 @@ class PushHandler(BaseHTTPRequestHandler):
         # step 1 : 解析请求的URL , 数据对象
         # urlStr = "解析出的URL"
         urlStr = self.path
-        print(urlStr)
+
         # postObj = "解析出的数据参数"
         postObj = self.rfile.read(int(self.headers['content-length']))
         if postObj is None:
-            print("postObj is None")
+
             return self.sendBackError(4, "postObj is None")
 
-
         else:
-
             # step 2.1 : 根据不通消息类型，处理数据对象
-
             global glb_Queue
             # step 2.1.1 如果是推送消息的url请求
             if urlStr == "/north/config/push":
                 #   此处不做处理将消息直接发送到消息队列
-                glb_Queue=MsgQueue()
+
                 glb_Queue.pushMsg("cm", postObj)
-                print("cm消息发送到队列")
+
 
             # step 2.1.2 如果是推送性能的url请求
             elif urlStr == "/north/data/online/push":
                 #   此处不做处理将消息直接发送到消息队列
-                glb_Queue = MsgQueue()
+
                 glb_Queue.pushMsg("pm", postObj)
-                print("pm消息发送到队列")
 
             # step 2.1.3 如果是推送告警的url请求
             elif urlStr == "/north/alarm/online/push":
                 #   此处不做处理将消息直接发送到消息队列
-                glb_Queue = MsgQueue()
                 glb_Queue.pushMsg("am", postObj)
-                print("am消息发送到队列")
 
             # step 2.1.4 否则返回错误信息
             #   不是主动推送请求，返回错误信息
@@ -179,8 +215,6 @@ def main():
     # 初始化全局对象
     glb_Queue = MsgQueue()
 
-
-    # TODO : 根据消息队列数量启动线程
     threadAry = []
     for i in range(0, glb_ThreadNum):
         thread = WorkThread()
